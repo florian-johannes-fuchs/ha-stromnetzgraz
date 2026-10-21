@@ -15,7 +15,8 @@ from homeassistant.const import (
 )
 from homeassistant.data_entry_flow import FlowResult
 
-from sngraz import StromNetzGraz, InvalidLogin
+from sngraz import InvalidLogin
+from . import async_create_connection
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,7 +45,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         errors = {}
-        sn = StromNetzGraz(user_input[CONF_USERNAME], user_input[CONF_PASSWORD])
+        sn = await async_create_connection(
+            self.hass, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+        )
         try:
             await sn.authenticate()
         except asyncio.TimeoutError:
