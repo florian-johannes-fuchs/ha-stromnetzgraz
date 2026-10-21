@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import ssl
 import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
@@ -14,6 +16,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
 )
 
+import sngraz
 from sngraz import StromNetzGraz, InvalidLogin
 from .const import DOMAIN
 
@@ -21,10 +24,33 @@ PLATFORMS = [Platform.SENSOR]
 _LOGGER = logging.getLogger(__name__)
 
 
+def _create_ssl_context() -> ssl.SSLContext:
+    """Build the same SSL context sngraz would, but outside the event loop (loading certs blocks)."""
+    sslcontext = ssl.create_default_context()
+    sslcontext.load_verify_locations(
+        cafile=os.path.join(os.path.dirname(sngraz.__file__), "certchain.crt")
+    )
+    return sslcontext
+
+
+async def async_create_connection(
+    hass: HomeAssistant, username: str, password: str
+) -> StromNetzGraz:
+    """Create the API connection without blocking the event loop."""
+    sslcontext = await hass.async_add_executor_job(_create_ssl_context)
+    websession = aiohttp.ClientSession(
+        headers={aiohttp.hdrs.USER_AGENT: f"pySNGraz/{sngraz.__version__}"},
+        connector=aiohttp.TCPConnector(ssl=sslcontext),
+    )
+    return StromNetzGraz(username, password, websession=websession)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Stromnetz Graz from a config entry."""
 
-    conn = StromNetzGraz(entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD])
+    conn = await async_create_connection(
+        hass, entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD]
+    )
 
     hass.data[DOMAIN] = conn
 
